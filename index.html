@@ -3,11 +3,13 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Qwen3-0.6B-q4 (WebLLM)</title>
+<title>Qwen2-0.5B-q4 (WebLLM)</title>
 <script src="https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.35/dist/web-llm.min.js"></script>
 <style>
-  :root{--bg:#0d1117;--panel:#0f141b;--ink:#e6edf3;--muted:#9fb1c3;
-        --accent:#58a6ff;--me:#16324b;--ai:#121a24}
+  :root {
+    --bg:#0d1117; --panel:#0f141b; --ink:#e6edf3; --muted:#9fb1c3;
+    --accent:#58a6ff; --me:#16324b; --ai:#121a24;
+  }
   *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,sans-serif}
   html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);
             display:flex;flex-direction:column}
@@ -32,7 +34,7 @@
 </head>
 <body>
 <header>
-  <h1>Qwen3-0.6B-q4 (WebLLM)</h1>
+  <h1>Qwen2-0.5B-q4 (WebLLM)</h1>
   <div id="status">Loading model…</div>
   <button id="mic" title="Tap to talk">🎤</button>
 </header>
@@ -56,16 +58,16 @@ u.rate=1;u.pitch=1;speechSynthesis.cancel();speechSynthesis.speak(u);}catch{}}
 
 let engine=null,history=[];
 
-// ---- Initialize WebLLM with Q4 model ----
+// ---- Initialize WebLLM with working model ----
 (async()=>{
-  statusEl.textContent="Downloading Qwen3-0.6B-q4 model…";
+  statusEl.textContent="Downloading Qwen2-0.5B-q4 model…";
   engine=await webllm.CreateMLCEngine(
-    "mlc-ai/Qwen3-0.6B-q4f16_1-MLC",
+    "mlc-ai/Qwen2-0.5B-Instruct-q4f16_1-MLC",
     {initProgressCallback:(p)=>{
       statusEl.textContent=`Loading… ${(p*100).toFixed(0)}%`;}}
   );
   statusEl.textContent="Ready!";
-  addBubble("👋 Hi! I’m Qwen3-0.6B-q4 running fully in your browser. Ask me anything!","bot");
+  addBubble("👋 Hi! I’m Qwen2-0.5B-q4 running fully in your browser. Ask me anything!","bot");
 })();
 
 // ---- Send handler ----
