@@ -1,35 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Local Qwen3 Chat (0.6B)</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Qwen3-0.6B-q4 (WebLLM)</title>
+<script src="https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.35/dist/web-llm.min.js"></script>
 <style>
-  :root{
-    --bg:#0d1117; --panel:#0f141b; --ink:#e6edf3; --muted:#9fb1c3;
-    --accent:#58a6ff; --me:#16324b; --ai:#121a24; --ring:#1f6feb;
-  }
-  *{box-sizing:border-box;font-family:Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial}
-  html,body{height:100%}
-  body{margin:0;background:var(--bg);color:var(--ink);display:flex;flex-direction:column}
-  header{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:12px 16px;background:linear-gradient(180deg,#0f1520,#0d1117);border-bottom:1px solid #1f2a37;position:sticky;top:0;z-index:10}
+  :root{--bg:#0d1117;--panel:#0f141b;--ink:#e6edf3;--muted:#9fb1c3;
+        --accent:#58a6ff;--me:#16324b;--ai:#121a24}
+  *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,sans-serif}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);
+            display:flex;flex-direction:column}
+  header{display:flex;align-items:center;justify-content:space-between;
+         padding:12px 16px;background:#0f1520;border-bottom:1px solid #1f2a37}
   header h1{margin:0;font-size:16px;font-weight:700}
   #status{font-size:12px;color:var(--muted)}
-  #mic{border:1px solid #263b55;background:#1a2636;color:#cfe3ff;border-radius:12px;padding:8px 12px;cursor:pointer}
-  #mic:active{outline:2px solid var(--ring)}
-  #chat{flex:1;overflow:auto;padding:18px;scroll-behavior:smooth}
-  .bubble{max-width:72ch;padding:12px 16px;border-radius:18px;margin:10px 0;line-height:1.45;white-space:pre-wrap}
-  .user{background:var(--me);border:1px solid #2b4f75;margin-left:auto;border-bottom-right-radius:6px}
-  .bot{background:var(--ai);border:1px solid #223246;margin-right:auto;border-bottom-left-radius:6px}
-  form{display:flex;gap:10px;padding:12px;border-top:1px solid #1f2a37;background:linear-gradient(180deg,#0e141d,#0c1117)}
-  textarea{flex:1;resize:none;height:64px;background:var(--panel);color:var(--ink);border:1px solid #223246;border-radius:14px;padding:12px 14px;font-size:15px}
-  button{background:var(--accent);color:#001226;border:none;border-radius:14px;padding:12px 16px;font-weight:700;cursor:pointer}
-  .hint{font-size:12px;color:var(--muted);padding:6px 16px}
+  #chat{flex:1;overflow:auto;padding:18px}
+  .bubble{max-width:70ch;margin:10px 0;padding:12px 16px;border-radius:18px;
+          line-height:1.4;white-space:pre-wrap}
+  .user{background:var(--me);margin-left:auto;border-bottom-right-radius:6px}
+  .bot{background:var(--ai);margin-right:auto;border-bottom-left-radius:6px}
+  form{display:flex;gap:10px;padding:12px;border-top:1px solid #1f2a37;
+       background:#0e141d}
+  textarea{flex:1;resize:none;height:60px;background:#131a26;color:var(--ink);
+           border:1px solid #223246;border-radius:14px;padding:10px 12px;font-size:15px}
+  button{background:var(--accent);color:#001226;border:none;border-radius:14px;
+         padding:12px 16px;font-weight:700;cursor:pointer}
+  #mic{background:#243349;color:#cfe3ff;border:none;border-radius:12px;
+       padding:10px 12px}
 </style>
 </head>
 <body>
 <header>
-  <h1>Qwen3-0.6B — Local Browser Chat</h1>
+  <h1>Qwen3-0.6B-q4 (WebLLM)</h1>
   <div id="status">Loading model…</div>
   <button id="mic" title="Tap to talk">🎤</button>
 </header>
@@ -38,136 +41,77 @@
 
 <form id="form">
   <textarea id="input" placeholder="Type a message…"></textarea>
-  <button id="send" type="submit">Send</button>
+  <button type="submit">Send</button>
 </form>
-<div class="hint">Tip: first load downloads the model and caches it locally. Works best over HTTPS or http://localhost.</div>
 
-<script type="module">
-/* Qwen3-0.6B (ONNX) in the browser via Transformers.js + WebGPU.
-   Clean UI, speech-to-text (if available), and text-to-speech. */
+<script>
+const chat=document.getElementById("chat"),input=document.getElementById("input"),
+form=document.getElementById("form"),statusEl=document.getElementById("status"),
+micBtn=document.getElementById("mic");
+function addBubble(t,who){const b=document.createElement("div");
+b.className="bubble "+(who==="user"?"user":"bot");b.textContent=t;
+chat.appendChild(b);chat.scrollTop=chat.scrollHeight;return b;}
+function speak(t){try{const u=new SpeechSynthesisUtterance(t);
+u.rate=1;u.pitch=1;speechSynthesis.cancel();speechSynthesis.speak(u);}catch{}}
 
-import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
+let engine=null,history=[];
 
-const HF_MODEL_ID = "onnx-community/Qwen3-0.6B-ONNX";
-const DEVICE = (navigator.gpu ? "webgpu" : "wasm");   // prefer WebGPU, fallback to WASM
-const DTYPE = "q4";                                   // small & fast
-
-// Basic UI wiring
-const chat  = document.getElementById("chat");
-const input = document.getElementById("input");
-const form  = document.getElementById("form");
-const mic   = document.getElementById("mic");
-const statusEl = document.getElementById("status");
-
-function addBubble(text, who="bot"){
-  const b = document.createElement("div");
-  b.className = "bubble " + (who === "user" ? "user" : "bot");
-  b.textContent = text;
-  chat.appendChild(b);
-  chat.scrollTop = chat.scrollHeight;
-  return b;
-}
-
-function setStatus(s){ statusEl.textContent = s; }
-function speak(text){
-  const u = new SpeechSynthesisUtterance(text);
-  u.rate = 1.0; u.pitch = 1.0;
-  try { speechSynthesis.cancel(); speechSynthesis.speak(u); } catch {}
-}
-
-// Slightly-guided chat prompt for small models
-const SYSTEM = "You are a concise, helpful assistant. Keep answers short unless asked for more.";
-const history = []; // {u: userText, a: assistantText}
-
-function buildPrompt(userTurn){
-  // Simple text prompt that works across many models
-  let p = `System: ${SYSTEM}\n`;
-  for(const t of history){
-    p += `User: ${t.u}\nAssistant: ${t.a}\n`;
-  }
-  p += `User: ${userTurn}\nAssistant:`;
-  return p;
-}
-
-// Transformers.js setup
-env.allowLocalModels = false; // pull from HF CDN + cache in IndexedDB
-if (DEVICE !== "webgpu") env.backends.onnx.wasm.numThreads = 1; // reduce stalls on mobile WASM
-
-let generator;
-(async () => {
-  try{
-    generator = await pipeline("text-generation", HF_MODEL_ID, {
-      device: DEVICE,
-      dtype: DTYPE,
-      progress_callback: (p) => setStatus(`Loading… ${Math.round(p*100)}%`)
-    });
-    setStatus(`Ready • ${DEVICE.toUpperCase()} • ${DTYPE}`);
-    addBubble("👋 Hi! I’m Qwen3-0.6B running fully in your browser. Ask me anything.");
-  }catch(err){
-    setStatus(`Load failed: ${err.message || err}`);
-    console.error(err);
-  }
+// ---- Initialize WebLLM with Q4 model ----
+(async()=>{
+  statusEl.textContent="Downloading Qwen3-0.6B-q4 model…";
+  engine=await webllm.CreateMLCEngine(
+    "mlc-ai/Qwen3-0.6B-q4f16_1-MLC",
+    {initProgressCallback:(p)=>{
+      statusEl.textContent=`Loading… ${(p*100).toFixed(0)}%`;}}
+  );
+  statusEl.textContent="Ready!";
+  addBubble("👋 Hi! I’m Qwen3-0.6B-q4 running fully in your browser. Ask me anything!","bot");
 })();
 
-async function generate(userText){
-  if(!generator){ addBubble("Model not ready yet.", "bot"); return; }
-  const prompt = buildPrompt(userText);
-  const t0 = performance.now();
-  const out = await generator(prompt, {
-    max_new_tokens: 160,
-    do_sample: true,
-    temperature: 0.7,
-    top_k: 40,
-    top_p: 0.95,
-    repetition_penalty: 1.1,
-    return_full_text: false
-  });
-  const text = (out?.[0]?.generated_text || "").trim();
-  const t1 = performance.now();
-  setStatus(`Ready • ${DEVICE.toUpperCase()} • ${DTYPE} • ${Math.round(t1-t0)} ms`);
-  return text || "…";
-}
-
-// Send handler
-form.addEventListener("submit", async (e) => {
+// ---- Send handler ----
+form.addEventListener("submit",async e=>{
   e.preventDefault();
-  const val = input.value.trim();
-  if(!val) return;
-  input.value = "";
-  addBubble(val, "user");
-  const reply = await generate(val);
-  addBubble(reply, "bot");
-  speak(reply);
-  history.push({ u: val, a: reply });
+  const user=input.value.trim();if(!user)return;
+  input.value="";addBubble(user,"user");
+  const replyBox=addBubble("…","bot");
+  const messages=[{role:"system",content:"You are a concise, friendly assistant."},
+    ...history.flatMap(x=>[{role:"user",content:x.u},{role:"assistant",content:x.a}]),
+    {role:"user",content:user}];
+  const t0=performance.now();
+  const resp=await engine.chat.completions.create({
+    messages,stream:false,temperature:0.7,max_tokens:160});
+  const txt=resp.choices?.[0]?.message?.content?.trim()||"…";
+  replyBox.textContent=txt;
+  const t1=performance.now();
+  statusEl.textContent=`Ready • ${(t1-t0|0)} ms`;
+  speak(txt);history.push({u:user,a:txt});
 });
 
-// Speech-to-text (simple toggle)
+// ---- Speech-to-text ----
 let rec;
-function makeRecognizer(){
-  const R = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(!R) return null;
-  const r = new R();
-  r.lang = "en-US"; r.continuous = false; r.interimResults = false; r.maxAlternatives = 1;
-  r.onresult = async (e) => {
-    const said = e.results[0][0].transcript;
-    addBubble(said, "user");
-    const reply = await generate(said);
-    addBubble(reply, "bot"); speak(reply);
-    history.push({ u: said, a: reply });
+function setupMic(){
+  const R=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!R)return null;
+  const r=new R();r.lang="en-US";
+  r.onresult=e=>{
+    const t=e.results[0][0].transcript;
+    addBubble(t,"user");
+    engine.chat.completions.create({
+      messages:[{role:"user",content:t}],stream:false
+    }).then(resp=>{
+      const txt=resp.choices?.[0]?.message?.content?.trim()||"…";
+      addBubble(txt,"bot");speak(txt);
+    });
   };
-  r.onend = () => { mic.textContent = "🎤"; };
-  r.onerror = () => { mic.textContent = "🎤"; };
+  r.onend=()=>micBtn.textContent="🎤";
   return r;
 }
-rec = makeRecognizer();
-
-mic.addEventListener("click", () => {
-  if(!rec){ alert("Speech input not supported in this browser."); return; }
-  try{
-    if(mic.textContent === "🎤"){ rec.start(); mic.textContent = "🛑"; }
-    else { rec.stop(); mic.textContent = "🎤"; }
-  }catch(e){ console.log(e); mic.textContent = "🎤"; }
-});
+rec=setupMic();
+micBtn.onclick=()=>{
+  if(!rec){alert("Speech input not supported.");return;}
+  if(micBtn.textContent==="🎤"){rec.start();micBtn.textContent="🛑";}
+  else{rec.stop();micBtn.textContent="🎤";}
+};
 </script>
 </body>
 </html>
