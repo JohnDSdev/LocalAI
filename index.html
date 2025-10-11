@@ -1,37 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Qwen2-0.5B-q4 (WebLLM)</title>
-<script src="https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.35/dist/web-llm.min.js"></script>
-<style>
-  :root {
-    --bg:#0d1117; --panel:#0f141b; --ink:#e6edf3; --muted:#9fb1c3;
-    --accent:#58a6ff; --me:#16324b; --ai:#121a24;
+
+<!-- Load WebLLM safely with defer + fallback -->
+<script src="https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.35/dist/web-llm.min.js" defer></script>
+<script>
+window.addEventListener('load', () => {
+  if (typeof webllm === 'undefined') {
+    console.warn("WebLLM CDN failed — trying fallback.");
+    const s=document.createElement('script');
+    s.src="https://unpkg.com/@mlc-ai/web-llm@0.2.35/dist/web-llm.min.js";
+    document.head.appendChild(s);
   }
-  *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,sans-serif}
-  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);
-            display:flex;flex-direction:column}
-  header{display:flex;align-items:center;justify-content:space-between;
-         padding:12px 16px;background:#0f1520;border-bottom:1px solid #1f2a37}
-  header h1{margin:0;font-size:16px;font-weight:700}
-  #status{font-size:12px;color:var(--muted)}
-  #chat{flex:1;overflow:auto;padding:18px}
-  .bubble{max-width:70ch;margin:10px 0;padding:12px 16px;border-radius:18px;
-          line-height:1.4;white-space:pre-wrap}
-  .user{background:var(--me);margin-left:auto;border-bottom-right-radius:6px}
-  .bot{background:var(--ai);margin-right:auto;border-bottom-left-radius:6px}
-  form{display:flex;gap:10px;padding:12px;border-top:1px solid #1f2a37;
-       background:#0e141d}
-  textarea{flex:1;resize:none;height:60px;background:#131a26;color:var(--ink);
-           border:1px solid #223246;border-radius:14px;padding:10px 12px;font-size:15px}
-  button{background:var(--accent);color:#001226;border:none;border-radius:14px;
-         padding:12px 16px;font-weight:700;cursor:pointer}
-  #mic{background:#243349;color:#cfe3ff;border:none;border-radius:12px;
-       padding:10px 12px}
+});
+</script>
+
+<style>
+:root {
+  --bg:#0d1117; --panel:#0f141b; --ink:#e6edf3; --muted:#9fb1c3;
+  --accent:#58a6ff; --me:#16324b; --ai:#121a24;
+}
+*{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,sans-serif}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);
+  display:flex;flex-direction:column}
+header{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;background:#0f1520;border-bottom:1px solid #1f2a37}
+header h1{margin:0;font-size:16px;font-weight:700}
+#status{font-size:12px;color:var(--muted)}
+#chat{flex:1;overflow:auto;padding:18px}
+.bubble{max-width:70ch;margin:10px 0;padding:12px 16px;border-radius:18px;
+  line-height:1.4;white-space:pre-wrap}
+.user{background:var(--me);margin-left:auto;border-bottom-right-radius:6px}
+.bot{background:var(--ai);margin-right:auto;border-bottom-left-radius:6px}
+form{display:flex;gap:10px;padding:12px;border-top:1px solid #1f2a37;
+  background:#0e141d}
+textarea{flex:1;resize:none;height:60px;background:#131a26;color:var(--ink);
+  border:1px solid #223246;border-radius:14px;padding:10px 12px;font-size:15px}
+button{background:var(--accent);color:#001226;border:none;border-radius:14px;
+  padding:12px 16px;font-weight:700;cursor:pointer}
+#mic{background:#243349;color:#cfe3ff;border:none;border-radius:12px;
+  padding:10px 12px}
 </style>
 </head>
+
 <body>
 <header>
   <h1>Qwen2-0.5B-q4 (WebLLM)</h1>
@@ -47,73 +61,83 @@
 </form>
 
 <script>
-const chat=document.getElementById("chat"),input=document.getElementById("input"),
-form=document.getElementById("form"),statusEl=document.getElementById("status"),
-micBtn=document.getElementById("mic");
-function addBubble(t,who){const b=document.createElement("div");
-b.className="bubble "+(who==="user"?"user":"bot");b.textContent=t;
-chat.appendChild(b);chat.scrollTop=chat.scrollHeight;return b;}
-function speak(t){try{const u=new SpeechSynthesisUtterance(t);
-u.rate=1;u.pitch=1;speechSynthesis.cancel();speechSynthesis.speak(u);}catch{}}
+async function initApp() {
+  const chat=document.getElementById("chat"),
+        input=document.getElementById("input"),
+        form=document.getElementById("form"),
+        statusEl=document.getElementById("status"),
+        micBtn=document.getElementById("mic");
+  function addBubble(t,who){const b=document.createElement("div");
+    b.className="bubble "+(who==="user"?"user":"bot");
+    b.textContent=t;chat.appendChild(b);chat.scrollTop=chat.scrollHeight;return b;}
+  function speak(t){try{const u=new SpeechSynthesisUtterance(t);
+    u.rate=1;u.pitch=1;speechSynthesis.cancel();speechSynthesis.speak(u);}catch{}}
 
-let engine=null,history=[];
+  let engine=null,history=[];
 
-// ---- Initialize WebLLM with working model ----
-(async()=>{
+  // --- Initialize WebLLM model ---
   statusEl.textContent="Downloading Qwen2-0.5B-q4 model…";
-  engine=await webllm.CreateMLCEngine(
-    "mlc-ai/Qwen2-0.5B-Instruct-q4f16_1-MLC",
-    {initProgressCallback:(p)=>{
-      statusEl.textContent=`Loading… ${(p*100).toFixed(0)}%`;}}
-  );
-  statusEl.textContent="Ready!";
-  addBubble("👋 Hi! I’m Qwen2-0.5B-q4 running fully in your browser. Ask me anything!","bot");
-})();
+  try {
+    engine=await webllm.CreateMLCEngine(
+      "mlc-ai/Qwen2-0.5B-Instruct-q4f16_1-MLC",
+      {initProgressCallback:(p)=>{
+        statusEl.textContent=`Loading… ${(p*100).toFixed(0)}%`;}}
+    );
+    statusEl.textContent="Ready!";
+    addBubble("👋 Hi! I’m Qwen2-0.5B-q4 running fully in your browser.","bot");
+  } catch(e) {
+    console.error(e);
+    statusEl.textContent="Failed to load model.";
+    addBubble("⚠️ Could not load model. Check console or CDN.","bot");
+    return;
+  }
 
-// ---- Send handler ----
-form.addEventListener("submit",async e=>{
-  e.preventDefault();
-  const user=input.value.trim();if(!user)return;
-  input.value="";addBubble(user,"user");
-  const replyBox=addBubble("…","bot");
-  const messages=[{role:"system",content:"You are a concise, friendly assistant."},
-    ...history.flatMap(x=>[{role:"user",content:x.u},{role:"assistant",content:x.a}]),
-    {role:"user",content:user}];
-  const t0=performance.now();
-  const resp=await engine.chat.completions.create({
-    messages,stream:false,temperature:0.7,max_tokens:160});
-  const txt=resp.choices?.[0]?.message?.content?.trim()||"…";
-  replyBox.textContent=txt;
-  const t1=performance.now();
-  statusEl.textContent=`Ready • ${(t1-t0|0)} ms`;
-  speak(txt);history.push({u:user,a:txt});
-});
+  // --- Handle text send ---
+  form.addEventListener("submit",async e=>{
+    e.preventDefault();
+    const user=input.value.trim();if(!user)return;
+    input.value="";addBubble(user,"user");
+    const replyBox=addBubble("…","bot");
+    const messages=[
+      {role:"system",content:"You are a concise, friendly assistant."},
+      ...history.flatMap(x=>[{role:"user",content:x.u},{role:"assistant",content:x.a}]),
+      {role:"user",content:user}
+    ];
+    const t0=performance.now();
+    const resp=await engine.chat.completions.create({
+      messages,stream:false,temperature:0.7,max_tokens:160});
+    const txt=resp.choices?.[0]?.message?.content?.trim()||"…";
+    replyBox.textContent=txt;
+    const t1=performance.now();
+    statusEl.textContent=`Ready • ${(t1-t0|0)} ms`;
+    speak(txt);history.push({u:user,a:txt});
+  });
 
-// ---- Speech-to-text ----
-let rec;
-function setupMic(){
+  // --- Speech-to-text ---
   const R=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!R)return null;
-  const r=new R();r.lang="en-US";
-  r.onresult=e=>{
+  if(!R){micBtn.onclick=()=>alert("Speech input not supported on this browser.");return;}
+  const rec=new R();rec.lang="en-US";
+  rec.onresult=async e=>{
     const t=e.results[0][0].transcript;
     addBubble(t,"user");
-    engine.chat.completions.create({
-      messages:[{role:"user",content:t}],stream:false
-    }).then(resp=>{
-      const txt=resp.choices?.[0]?.message?.content?.trim()||"…";
-      addBubble(txt,"bot");speak(txt);
-    });
+    const replyBox=addBubble("…","bot");
+    const resp=await engine.chat.completions.create({
+      messages:[{role:"user",content:t}],stream:false});
+    const txt=resp.choices?.[0]?.message?.content?.trim()||"…";
+    replyBox.textContent=txt;speak(txt);
   };
-  r.onend=()=>micBtn.textContent="🎤";
-  return r;
+  rec.onend=()=>micBtn.textContent="🎤";
+  micBtn.onclick=()=>{
+    if(micBtn.textContent==="🎤"){rec.start();micBtn.textContent="🛑";}
+    else{rec.stop();micBtn.textContent="🎤";}
+  };
 }
-rec=setupMic();
-micBtn.onclick=()=>{
-  if(!rec){alert("Speech input not supported.");return;}
-  if(micBtn.textContent==="🎤"){rec.start();micBtn.textContent="🛑";}
-  else{rec.stop();micBtn.textContent="🎤";}
-};
+window.addEventListener('load',()=>{
+  // Wait for webllm to exist before initializing
+  const check=setInterval(()=>{
+    if(typeof webllm!=='undefined'){clearInterval(check);initApp();}
+  },200);
+});
 </script>
 </body>
 </html>
